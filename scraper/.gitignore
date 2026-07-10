@@ -1,0 +1,6 @@
+node_modules/
+.data/
+.env
+run_output*.txt
+output-*.json
+line-message.json

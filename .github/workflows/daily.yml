@@ -1,0 +1,39 @@
+name: 每日法規/HR情報推播
+
+on:
+  schedule:
+    # 01:00 UTC = 09:00 台灣時間
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安裝相依套件
+        working-directory: scraper
+        run: npm install
+
+      - name: 執行爬取 + Gemini 判斷 + 寫入 Notion
+        working-directory: scraper
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DEDUPE_DATABASE_ID: ${{ secrets.NOTION_DEDUPE_DATABASE_ID }}
+        run: npm start
+
+      - name: 保留執行紀錄與推播內容
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-output
+          path: |
+            scraper/line-message.json
+          retention-days: 14

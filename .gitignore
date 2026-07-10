@@ -1,0 +1,7 @@
+node_modules/
+.env
+.claude/settings.local.json
+scraper/.data/
+scraper/run_output*.txt
+scraper/output-*.json
+scraper/line-message.json
