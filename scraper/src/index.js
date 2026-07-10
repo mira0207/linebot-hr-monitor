@@ -12,6 +12,7 @@ import { filterRecent } from "./lib/dateFilter.js";
 import { analyzeLaborLawItems } from "./gemini/laborLawAnalysis.js";
 import { selectHrDigest } from "./gemini/hrDigestSelection.js";
 import { buildDailyFlexMessage } from "./line/buildDailyMessage.js";
+import { pushLineMessage } from "./line/pushMessage.js";
 import { writeFileSync } from "fs";
 
 // track: "law" = 勞動法令偵探(行政院公報+常見問答+勞動法令查詢系統),"news" = HR 情報站(新聞/雜誌)
@@ -94,15 +95,22 @@ async function main() {
   console.log(JSON.stringify(flexMessage, null, 2));
   writeFileSync("line-message.json", JSON.stringify(flexMessage, null, 2));
 
-  // TODO: 這裡標記「已推播」的時機是 Gemini 判斷/精選完成後,還不是真的 LINE 推播成功後
-  // ——LINE Push 節點接上之後,應該把 markPushedNotion 移到推播成功的 callback 裡才準確。
-  if (toMarkPushed.length > 0) {
-    try {
-      await markPushedNotion(toMarkPushed);
-      console.log(`\n已寫入 ${toMarkPushed.length} 筆推播紀錄到 Notion`);
-    } catch (err) {
-      console.error(`[FAIL] Notion 寫入推播紀錄失敗: ${err.message}`);
+  // 標記「已推播」的時機是「LINE 推播成功後」才觸發,不是 Gemini 判斷完就標記 ——
+  // 這樣如果推播失敗,這批項目下次執行還是「未推播」狀態,會被重新嘗試,不會憑空消失。
+  try {
+    await pushLineMessage(flexMessage);
+    console.log(`\n已推播到 LINE(userId: ${process.env.LINE_HR_USER_ID})`);
+
+    if (toMarkPushed.length > 0) {
+      try {
+        await markPushedNotion(toMarkPushed);
+        console.log(`已寫入 ${toMarkPushed.length} 筆推播紀錄到 Notion`);
+      } catch (err) {
+        console.error(`[FAIL] Notion 寫入推播紀錄失敗(訊息已經推播成功,但去重紀錄沒寫入,下次可能會重複推播): ${err.message}`);
+      }
     }
+  } catch (err) {
+    console.error(`[FAIL] LINE 推播失敗,本次不標記已推播,下次執行會重新嘗試這批項目: ${err.message}`);
   }
 }
 

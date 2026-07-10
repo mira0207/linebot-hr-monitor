@@ -20,13 +20,15 @@ jobs:
         working-directory: scraper
         run: npm install
 
-      - name: 執行爬取 + Gemini 判斷 + 寫入 Notion
+      - name: 執行爬取 + Gemini 判斷 + LINE 推播 + 寫入 Notion
         working-directory: scraper
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DEDUPE_DATABASE_ID: ${{ secrets.NOTION_DEDUPE_DATABASE_ID }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_HR_USER_ID: ${{ secrets.LINE_HR_USER_ID }}
         run: npm start
 
       - name: 保留執行紀錄與推播內容
