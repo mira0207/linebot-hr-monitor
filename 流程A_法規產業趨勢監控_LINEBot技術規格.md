@@ -243,12 +243,13 @@ Database 需要分享給 integration(右上角 `...` → Connections)才能被 A
 
 Repo:`https://github.com/mira0207/linebot-hr-monitor`,workflow 檔案:[.github/workflows/daily.yml](.github/workflows/daily.yml)
 
-- 觸發:`cron: "0 1 * * *"`(01:00 UTC = 09:00 台灣時間)+ `workflow_dispatch`(可手動觸發測試)
+- 觸發:`cron: "5 1 * * *"`(01:05 UTC = 09:05 台灣時間)+ `workflow_dispatch`(可手動觸發測試)
 - 執行內容:checkout → setup-node(22)→ `npm install` → `npm start`(於 `scraper/` 目錄)
 - 執行完會把 `line-message.json`(當次推播的實際內容)存成 workflow artifact,保留 14 天,方便事後回頭查當天到底推了什麼
 
 **已知限制:**
 - GitHub 排程時間不是絕對精準,尖峰時段可能延遲數分鐘到十幾分鐘
+- **實測發生過排程完全沒觸發**:2026-07-11 09:00 這次排程沒有任何執行紀錄(Actions 頁面只看得到手動觸發的紀錄),原本 cron 設在整點(`0 1 * * *`),GitHub 官方文件指出整點是排程高負載時段,容易延遲甚至被跳過,已改成 `5 1 * * *` 避開整點觀察。若之後仍不穩定,可能需要改用外部排程服務(如 cron-job.org)定時打 `workflow_dispatch` 的 REST API 來觸發,而不是依賴 GitHub 原生的 `schedule` 事件
 - 排程只認 `main` 分支
 - 這是無狀態的一次性執行,沒有做「執行中/執行失敗」的額外告警,依賴 GitHub 預設的失敗通知信
 
@@ -282,7 +283,7 @@ Repo:`https://github.com/mira0207/linebot-hr-monitor`,workflow 檔案:[.github/w
 - [x] Notion 去重機制實測跑通(查詢、寫入、90 天保留邏輯)
 - [x] LINE 推播實測至少成功一次(手動觸發)
 - [ ] 觀察至少 3-5 天的自動排程執行結果,確認：
-  - 每天都有準時(或接近準時)執行
+  - 每天都有準時(或接近準時)執行 —— **2026-07-11 09:00 這天已知排程沒觸發**,改成 09:05 後從 2026-07-12 起重新觀察,這項還不能打勾
   - 推播內容品質穩定,沒有明顯的誤判或重複
   - 沒有 API 額度或費用異常
 - [ ] 確認 GitHub Actions 執行失敗時,失敗通知信真的會寄到有人在看的信箱
