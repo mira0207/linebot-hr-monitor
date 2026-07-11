@@ -2,8 +2,8 @@ name: 每日法規/HR情報推播
 
 on:
   schedule:
-    # 01:00 UTC = 09:00 台灣時間
-    - cron: "0 1 * * *"
+    # 01:05 UTC = 09:05 台灣時間;刻意避開整點,GitHub 官方文件說整點是排程高負載時段,容易延遲或被跳過
+    - cron: "5 1 * * *"
   workflow_dispatch: {}
 
 jobs:
