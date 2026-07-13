@@ -1,9 +1,9 @@
 name: 每日法規/HR情報推播
 
 on:
-  schedule:
-    # 01:05 UTC = 09:05 台灣時間;刻意避開整點,GitHub 官方文件說整點是排程高負載時段,容易延遲或被跳過
-    - cron: "5 1 * * *"
+  # 排程改用外部服務(cron-job.org,每日 09:10 台灣時間)呼叫 workflow_dispatch 觸發,
+  # 不用 GitHub 原生的 schedule 事件——實測 GitHub 自己的排程延遲超過 3 小時甚至可能跳過整天,
+  # 不可靠。這裡故意不寫 schedule,避免跟外部觸發同一天執行兩次。
   workflow_dispatch: {}
 
 jobs:
