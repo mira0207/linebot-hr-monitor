@@ -4,3 +4,4 @@ node_modules/
 run_output*.txt
 output-*.json
 line-message.json
+scrape-output.json

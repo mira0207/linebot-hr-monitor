@@ -8,7 +8,8 @@ const LIST_URL = "https://www.workdj.tw/products/index.php?group_id=8738";
 // published_at 為 null,並標記 dateUnknown,讓 dateFilter 略過「當日/前日」判斷,
 // 改完全依賴 Notion 去重機制避免同一篇被重複推播。
 export async function fetchWorkdj() {
-  const res = await fetch(LIST_URL, { headers: { "User-Agent": "Mozilla/5.0" } });
+  // _cb: 避免固定 URL 吃到舊快取
+  const res = await fetch(`${LIST_URL}&_cb=${Date.now()}`, { headers: { "User-Agent": "Mozilla/5.0" } });
   if (!res.ok) throw new Error(`WORK DJ HR情報站請求失敗: HTTP ${res.status}`);
   const html = await res.text();
   const $ = cheerio.load(html);

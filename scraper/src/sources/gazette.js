@@ -9,7 +9,8 @@ const LIST_URL =
 // 且此頁本身固定只回傳約 10 筆,因此暫不做分頁,僅抓第一頁。
 
 export async function fetchGazette() {
-  const res = await fetch(LIST_URL, {
+  // _cb 為 cache-buster,避免固定 URL 吃到中間層的舊快取(104 實際發生過,政府站一併防護)
+  const res = await fetch(`${LIST_URL}&_cb=${Date.now()}`, {
     headers: { "User-Agent": "Mozilla/5.0" },
   });
   if (!res.ok) throw new Error(`行政院公報請求失敗: HTTP ${res.status}`);

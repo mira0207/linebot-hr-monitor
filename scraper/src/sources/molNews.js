@@ -4,7 +4,7 @@ import { fetchAllPages } from "../lib/paginate.js";
 const BASE_URL = "https://www.mol.gov.tw/1607/1632/1633/";
 
 async function fetchPage(page) {
-  const url = `${BASE_URL}?Page=${page}&PageSize=10`;
+  const url = `${BASE_URL}?Page=${page}&PageSize=10&_cb=${Date.now()}`; // _cb: 避免固定 URL 吃到舊快取
   const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
   if (!res.ok) throw new Error(`勞動部新聞稿請求失敗: HTTP ${res.status} (page ${page})`);
   const html = await res.text();

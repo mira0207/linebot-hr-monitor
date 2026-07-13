@@ -15,7 +15,7 @@ function rocDateToIso(rocDate) {
 }
 
 async function fetchPage(page) {
-  const url = page === 1 ? BASE_URL : `${BASE_URL}?page=${page}`;
+  const url = `${BASE_URL}?page=${page}&_cb=${Date.now()}`; // _cb: 避免固定 URL 吃到舊快取
   const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
   if (!res.ok) throw new Error(`勞動部勞動法令查詢系統請求失敗: HTTP ${res.status} (page ${page})`);
   const html = await res.text();

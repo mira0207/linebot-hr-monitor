@@ -17,7 +17,10 @@ function fetchCategory(categoryKey, { pages = 2, perPage = 10 } = {}) {
   const { id, label } = CATEGORIES[categoryKey];
 
   const fetchPage = async (page) => {
-    const url = `${API_BASE}?categories=${id}&page=${page}&per_page=${perPage}&_fields=id,date,link,title,excerpt`;
+    // _cb 是 cache-buster:104 的伺服器以完整 URL 為 key 快取 API 回應,
+    // 固定 URL 會拿到舊資料(實測當天新文章發布 20 分鐘後仍被快取擋住看不到),
+    // 加上時間戳記讓每次請求 URL 都不同,強制取得最新內容
+    const url = `${API_BASE}?categories=${id}&page=${page}&per_page=${perPage}&_fields=id,date,link,title,excerpt&_cb=${Date.now()}`;
     const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (res.status === 400) return []; // 超過總頁數時 WP REST API 回傳 400,視為沒有更多資料
     if (!res.ok) throw new Error(`104職場力(${label}) 請求失敗: HTTP ${res.status} (page ${page})`);
