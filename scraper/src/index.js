@@ -25,6 +25,18 @@ const SOURCE_CONFIGS = [
   { fetch: fetchWorkdj, label: "WORK DJ人力銀行", track: "news" },
 ];
 
+// 關鍵步驟(Notion 去重、Gemini、LINE 推播、Notion 標記)失敗時記錄下來,
+// 執行結束用非零 exit code 收尾 —— 推播照常完成,但 CI 上的 run 會顯示失敗、GitHub 會寄通知信。
+// 教訓:去重機制曾在 CI 上連續失敗三天沒人發現(錯誤被 catch 住、run 一直是綠色),
+// 導致同樣的內容天天重複推播。優雅降級可以,但不能安靜地降級。
+const criticalFailures = [];
+
+function reportCritical(message) {
+  criticalFailures.push(message);
+  console.error(`[FAIL] ${message}`);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error::${message}`);
+}
+
 async function main() {
   const results = await Promise.allSettled(SOURCE_CONFIGS.map((cfg) => cfg.fetch()));
 
@@ -57,7 +69,7 @@ async function main() {
     candidates = await filterUnseenNotion(recentItems);
     console.log(`(排除 90 天內已推播過的項目:${recentItems.length} 筆 → ${candidates.length} 筆)`);
   } catch (err) {
-    console.error(`[FAIL] Notion 去重查詢失敗,本次略過去重、視為全部未推播: ${err.message}`);
+    reportCritical(`Notion 去重查詢失敗,本次略過去重、視為全部未推播(可能導致重複推播): ${err.message}`);
   }
 
   const lawItems = candidates.filter((item) => item.track === "law");
@@ -75,7 +87,7 @@ async function main() {
     console.log(JSON.stringify(relevantLaw, null, 2));
     toMarkPushed.push(...relevantLaw);
   } catch (err) {
-    console.error(`[FAIL] Gemini 法令判斷失敗,略過此軌道: ${err.message}`);
+    reportCritical(`Gemini 法令判斷失敗,略過此軌道: ${err.message}`);
   }
 
   console.log(`\n=== HR 情報站(${newsItems.length} 筆候選)===`);
@@ -85,7 +97,7 @@ async function main() {
     console.log(JSON.stringify(digestNews, null, 2));
     toMarkPushed.push(...digestNews);
   } catch (err) {
-    console.error(`[FAIL] Gemini HR 情報站精選失敗,略過此軌道: ${err.message}`);
+    reportCritical(`Gemini HR 情報站精選失敗,略過此軌道: ${err.message}`);
   }
 
   // 兩軌合併成單一則 LINE Flex Message(9:00 推播)
@@ -106,11 +118,16 @@ async function main() {
         await markPushedNotion(toMarkPushed);
         console.log(`已寫入 ${toMarkPushed.length} 筆推播紀錄到 Notion`);
       } catch (err) {
-        console.error(`[FAIL] Notion 寫入推播紀錄失敗(訊息已經推播成功,但去重紀錄沒寫入,下次可能會重複推播): ${err.message}`);
+        reportCritical(`Notion 寫入推播紀錄失敗(訊息已經推播成功,但去重紀錄沒寫入,下次會重複推播): ${err.message}`);
       }
     }
   } catch (err) {
-    console.error(`[FAIL] LINE 推播失敗,本次不標記已推播,下次執行會重新嘗試這批項目: ${err.message}`);
+    reportCritical(`LINE 推播失敗,本次不標記已推播,下次執行會重新嘗試這批項目: ${err.message}`);
+  }
+
+  if (criticalFailures.length > 0) {
+    console.error(`\n本次執行有 ${criticalFailures.length} 個關鍵步驟失敗(見上方 [FAIL]),以失敗狀態結束`);
+    process.exitCode = 1;
   }
 }
 
