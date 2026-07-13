@@ -77,6 +77,12 @@ function newsItemBox(item) {
 // lawItems:勞動法令偵探判定 relevant 的項目(附 analysis 欄位)
 // newsItems:HR 情報站精選入列的項目(附 category / pick_reason)
 export function buildDailyFlexMessage({ lawItems, newsItems, date }) {
+  // 兩軌都沒有內容時,不發整張空的 Flex 卡片,改用一句簡短文字訊息
+  // (仍然照常推播,當作「系統還活著」的每日心跳訊號)
+  if (lawItems.length === 0 && newsItems.length === 0) {
+    return { type: "text", text: `📭 今天無精選文章(${date})` };
+  }
+
   const bodyContents = [
     { type: "text", text: "⚖️ 勞動法令偵探", weight: "bold", size: "md" },
   ];

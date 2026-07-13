@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "scrape": "node src/scrapeOnly.js"
+    "scrape": "node src/scrapeOnly.js",
+    "test-empty": "node src/testEmptyPush.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0"

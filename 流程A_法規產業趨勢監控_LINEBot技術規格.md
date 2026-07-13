@@ -227,7 +227,8 @@ Database 需要分享給 integration(右上角 `...` → Connections)才能被 A
 - Header:深綠色底,顯示標題與日期
 - Body 分兩區塊:「⚖️ 勞動法令偵探」(依 `relevance_score` 由高到低排序,顯示星等分數、Gemini 摘要、影響對象、生效日期、HR 建議)、「📰 HR 情報站」(依分類顯示標題與入選原因)
 - 每個項目的 box 都掛 `action: { type: "uri", uri: item.link }`,點擊可直接開啟原文
-- 兩軌都沒有項目時,對應區塊顯示「今日無相關法令異動」/「今日無精選文章」,訊息仍然照常推播(當作系統還活著的心跳訊號)
+- 只有單軌沒有項目時,對應區塊顯示「今日無相關法令異動」/「今日無精選文章」
+- **兩軌都沒有項目時,不發空的 Flex 卡片,改推一句簡短文字**:「📭 今天無精選文章(YYYY-MM-DD)」,仍然照常推播(當作系統還活著的心跳訊號)。可用 `npm run test-empty`(於 `scraper/` 目錄)單獨模擬這個情境並實際推播測試(會耗 1 則月額度)
 
 ### 6.2 推播([scraper/src/line/pushMessage.js](scraper/src/line/pushMessage.js))
 
