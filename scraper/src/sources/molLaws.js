@@ -14,11 +14,35 @@ function rocDateToIso(rocDate) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
+// 此站是政府自建主機(124.199.82.82,無 CDN),疑似封鎖海外 IP:
+// 本地(台灣 IP)實測從未失敗,GitHub Actions(美國 IP)實測每次都 fetch failed。
+// 這裡加上逾時、重試、以及把底層錯誤原因(err.cause)寫進錯誤訊息,
+// 讓 CI log 能看出到底是連線被拒、逾時還是 DNS 問題,而不是籠統的 fetch failed。
+const RETRIES = 3;
+const TIMEOUT_MS = 15000;
+
+async function fetchWithRetry(url) {
+  let lastErr;
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RETRIES) await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+  const cause = lastErr?.cause ? `;底層原因: ${lastErr.cause.code || lastErr.cause.message}` : "";
+  throw new Error(`勞動部勞動法令查詢系統請求失敗(已重試 ${RETRIES} 次): ${lastErr.message}${cause}`);
+}
+
 async function fetchPage(page) {
   const url = `${BASE_URL}?page=${page}&_cb=${Date.now()}`; // _cb: 避免固定 URL 吃到舊快取
-  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-  if (!res.ok) throw new Error(`勞動部勞動法令查詢系統請求失敗: HTTP ${res.status} (page ${page})`);
-  const html = await res.text();
+  const html = await fetchWithRetry(url);
   const $ = cheerio.load(html);
 
   const items = [];
