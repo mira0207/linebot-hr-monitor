@@ -16,10 +16,13 @@ import { pushLineMessage } from "./line/pushMessage.js";
 import { writeFileSync } from "fs";
 
 // track: "law" = 勞動法令偵探(行政院公報+常見問答+勞動法令查詢系統),"news" = HR 情報站(新聞/雜誌)
+// skipInCI: laws.mol.gov.tw 為政府自建主機,封鎖海外 IP(GitHub Actions 實測 ETIMEDOUT,
+// 對方完全不回應),在 CI 環境直接跳過不抓,免得每天空等逾時+印失敗訊息。
+// 其法令內容與行政院公報(Cloudflare,CI 可達)高度重疊,重要異動不會漏;本地執行時照常抓。
 const SOURCE_CONFIGS = [
   { fetch: fetchGazette, label: "行政院公報", track: "law" },
   { fetch: fetchMolFaq, label: "勞動部常見問答", track: "law" },
-  { fetch: fetchMolLaws, label: "勞動部勞動法令查詢系統", track: "law" },
+  { fetch: fetchMolLaws, label: "勞動部勞動法令查詢系統", track: "law", skipInCI: true },
   { fetch: fetchMolNews, label: "勞動部新聞稿", track: "news" },
   { fetch: fetchBlog104, label: "104職場力", track: "news" },
   { fetch: fetchWorkdj, label: "WORK DJ人力銀行", track: "news" },
@@ -38,11 +41,19 @@ function reportCritical(message) {
 }
 
 async function main() {
-  const results = await Promise.allSettled(SOURCE_CONFIGS.map((cfg) => cfg.fetch()));
+  const activeConfigs = SOURCE_CONFIGS.filter((cfg) => {
+    if (cfg.skipInCI && process.env.GITHUB_ACTIONS) {
+      console.log(`[SKIP] ${cfg.label}: CI 主機(海外 IP)連不上此站,僅本地執行時抓取`);
+      return false;
+    }
+    return true;
+  });
+
+  const results = await Promise.allSettled(activeConfigs.map((cfg) => cfg.fetch()));
 
   const allItems = [];
   results.forEach((result, i) => {
-    const { label, track } = SOURCE_CONFIGS[i];
+    const { label, track } = activeConfigs[i];
     if (result.status === "fulfilled") {
       console.log(`[OK] ${label}: ${result.value.length} 筆`);
       allItems.push(...result.value.map((item) => ({ ...item, track })));
