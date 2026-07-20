@@ -30,6 +30,7 @@ jobs:
           NOTION_DEDUPE_DATABASE_ID: ${{ secrets.NOTION_DEDUPE_DATABASE_ID }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_HR_USER_ID: ${{ secrets.LINE_HR_USER_ID }}
+          LINE_STAFF_GROUP_ID: ${{ secrets.LINE_STAFF_GROUP_ID }}
         run: npm start
 
       - name: 保留執行紀錄與推播內容

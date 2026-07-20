@@ -12,5 +12,6 @@ const message = buildDailyFlexMessage({ lawItems: [], newsItems: [], date: today
 console.log("推播內容:");
 console.log(JSON.stringify(message, null, 2));
 
-await pushLineMessage(message);
-console.log(`\n已推播到 LINE(userId: ${process.env.LINE_HR_USER_ID})`);
+const { delivered, failed } = await pushLineMessage(message);
+console.log(`\n已推播到 LINE(${delivered.join("、")})`);
+for (const f of failed) console.error(`推播到「${f.label}」失敗: ${f.error}`);

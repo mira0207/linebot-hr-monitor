@@ -119,10 +119,15 @@ async function main() {
   writeFileSync("line-message.json", JSON.stringify(flexMessage, null, 2));
 
   // 標記「已推播」的時機是「LINE 推播成功後」才觸發,不是 Gemini 判斷完就標記 ——
-  // 這樣如果推播失敗,這批項目下次執行還是「未推播」狀態,會被重新嘗試,不會憑空消失。
+  // 這樣如果推播全數失敗,這批項目下次執行還是「未推播」狀態,會被重新嘗試,不會憑空消失。
+  // 部分成功(例如個人送達、群組失敗)時照常標記,避免隔天重複推給已收到的對象,
+  // 失敗的對象用 reportCritical 讓 run 變紅、通知使用者。
   try {
-    await pushLineMessage(flexMessage);
-    console.log(`\n已推播到 LINE(userId: ${process.env.LINE_HR_USER_ID})`);
+    const { delivered, failed } = await pushLineMessage(flexMessage);
+    console.log(`\n已推播到 LINE(${delivered.join("、")})`);
+    for (const f of failed) {
+      reportCritical(`LINE 推播到「${f.label}」失敗(其他對象已送達,此對象本次內容不會補送): ${f.error}`);
+    }
 
     if (toMarkPushed.length > 0) {
       try {
