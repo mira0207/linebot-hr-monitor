@@ -75,6 +75,30 @@ export async function filterUnseenNotion(items) {
   return items.filter((item) => !seenLinks.has(item.link));
 }
 
+// 查詢今天是否已有任何推播紀錄(含空訊息心跳)。
+// 用途:排程可能一天觸發多次(cron-job.org 設有備用時間補救 GitHub API 偶發故障),
+// 內容項目靠 link 去重擋重複,但「📭 今天無精選文章」心跳訊息沒有對應紀錄,
+// 需要靠這個查詢判斷「今天已經推過了」而跳過,避免同一天發兩則空訊息。
+export async function hasPushRecordTodayNotion() {
+  const today = new Date().toISOString().slice(0, 10);
+  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId()}/query`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      filter: { property: "Pushed At", date: { equals: today } },
+      page_size: 1,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Notion 查詢今日推播紀錄失敗: HTTP ${res.status} - ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.results.length > 0;
+}
+
 // 標記為已推播:每個項目寫入一筆 Notion page
 export async function markPushedNotion(items) {
   for (const item of items) {

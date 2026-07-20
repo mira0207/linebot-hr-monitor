@@ -7,7 +7,7 @@ import { fetchMolLaws } from "./sources/molLaws.js";
 import { fetchMolNews } from "./sources/molNews.js";
 import { fetchBlog104 } from "./sources/blog104.js";
 import { fetchWorkdj } from "./sources/workdj.js";
-import { filterUnseenNotion, markPushedNotion } from "./lib/notionDedupe.js";
+import { filterUnseenNotion, markPushedNotion, hasPushRecordTodayNotion } from "./lib/notionDedupe.js";
 import { filterRecent } from "./lib/dateFilter.js";
 import { analyzeLaborLawItems } from "./gemini/laborLawAnalysis.js";
 import { selectHrDigest } from "./gemini/hrDigestSelection.js";
@@ -41,6 +41,18 @@ function reportCritical(message) {
 }
 
 async function main() {
+  // 一天最多推播一次:cron-job.org 設有備用觸發時間(補救 GitHub API 偶發故障),
+  // 第二次觸發一進來先查 Notion,今天已有推播紀錄(含空訊息心跳)就直接結束,
+  // 不爬取、不呼叫 Gemini、不推播;沒有紀錄代表第一次失敗了,照常整套執行等於自動補推。
+  try {
+    if (await hasPushRecordTodayNotion()) {
+      console.log("今日已有推播紀錄,本次應為備用觸發,直接結束(一天最多推播一次)");
+      return;
+    }
+  } catch (err) {
+    console.error(`(查詢今日推播紀錄失敗,照常執行: ${err.message})`);
+  }
+
   const activeConfigs = SOURCE_CONFIGS.filter((cfg) => {
     if (cfg.skipInCI && process.env.GITHUB_ACTIONS) {
       console.log(`[SKIP] ${cfg.label}: CI 主機(海外 IP)連不上此站,僅本地執行時抓取`);
@@ -135,6 +147,15 @@ async function main() {
         console.log(`已寫入 ${toMarkPushed.length} 筆推播紀錄到 Notion`);
       } catch (err) {
         reportCritical(`Notion 寫入推播紀錄失敗(訊息已經推播成功,但去重紀錄沒寫入,下次會重複推播): ${err.message}`);
+      }
+    } else {
+      // 空訊息日沒有內容項目可標記,寫一筆心跳紀錄,
+      // 讓同一天的第二次觸發在開頭的檢查就知道已推過、直接結束
+      try {
+        await markPushedNotion([{ link: `heartbeat-${today}`, title: "📭 空訊息心跳紀錄", track: "news" }]);
+        console.log("已寫入空訊息心跳紀錄到 Notion");
+      } catch (err) {
+        console.error(`(心跳紀錄寫入失敗,同一天若再次觸發可能重複發空訊息: ${err.message})`);
       }
     }
   } catch (err) {
