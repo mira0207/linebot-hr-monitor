@@ -7,8 +7,8 @@ import { fetchMolLaws } from "./sources/molLaws.js";
 import { fetchMolNews } from "./sources/molNews.js";
 import { fetchBlog104 } from "./sources/blog104.js";
 import { fetchWorkdj } from "./sources/workdj.js";
-import { filterUnseenNotion, markPushedNotion, hasPushRecordTodayNotion } from "./lib/notionDedupe.js";
-import { filterRecent } from "./lib/dateFilter.js";
+import { filterUnseenNotion, markPushedNotion, hasPushRecordTodayNotion, purgePushRecordsBefore } from "./lib/notionDedupe.js";
+import { filterRecent, taipeiToday, lookbackDays } from "./lib/dateFilter.js";
 import { analyzeLaborLawItems } from "./gemini/laborLawAnalysis.js";
 import { selectHrDigest } from "./gemini/hrDigestSelection.js";
 import { buildDailyFlexMessage } from "./line/buildDailyMessage.js";
@@ -40,7 +40,27 @@ function reportCritical(message) {
   if (process.env.GITHUB_ACTIONS) console.log(`::error::${message}`);
 }
 
+// Notion 推播紀錄的刪除界線:原則是「本月 1 號以前的全部刪」,
+// 但界線最多只推到「今天往前 3 天」—— 週一會回看到上週五,如果月初剛好是週一,
+// 上週五~週日的紀錄還要拿來去重(同一天的備用觸發也會用到),一進新月份就刪會造成重複推播。
+// 所以上個月最後幾天的紀錄會在新月份頭幾天陸續刪掉,不是 1 號當天一次清空。
+function purgeCutoffIso(todayIso) {
+  const firstOfMonth = `${todayIso.slice(0, 7)}-01`;
+  const keepFrom = new Date(`${todayIso}T00:00:00Z`);
+  keepFrom.setUTCDate(keepFrom.getUTCDate() - (lookbackDays(1) - 1));
+  const keepFromIso = keepFrom.toISOString().slice(0, 10);
+  return firstOfMonth < keepFromIso ? firstOfMonth : keepFromIso;
+}
+
 async function main() {
+  // 週六、週日不推播(這兩天幾乎沒有新資訊,過去都是推空訊息),
+  // 週五之後發布的內容留到週一一起推(見 lookbackDays)
+  const { iso: todayIso, weekday } = taipeiToday();
+  if (weekday === 0 || weekday === 6) {
+    console.log(`今天(${todayIso})是週末,不推播,週五之後的內容會在週一一起推送`);
+    return;
+  }
+
   // 一天最多推播一次:cron-job.org 設有備用觸發時間(補救 GitHub API 偶發故障),
   // 第二次觸發一進來先查 Notion,今天已有推播紀錄(含空訊息心跳)就直接結束,
   // 不爬取、不呼叫 Gemini、不推播;沒有紀錄代表第一次失敗了,照常整套執行等於自動補推。
@@ -81,8 +101,10 @@ async function main() {
     console.log(`(同次執行內去除 ${allItems.length - uniqueItems.length} 筆重複標題)`);
   }
 
-  const recentItems = filterRecent(uniqueItems);
-  console.log(`(只保留當日/前日發布的項目:${uniqueItems.length} 筆 → ${recentItems.length} 筆)`);
+  const days = lookbackDays(weekday);
+  const recentItems = filterRecent(uniqueItems, days);
+  const rangeLabel = days === 2 ? "當日/前日" : `近 ${days} 日(週一補上週五~週日)`;
+  console.log(`(只保留${rangeLabel}發布的項目:${uniqueItems.length} 筆 → ${recentItems.length} 筆)`);
 
   // 去重基準是「已推播」,不是「已處理」:這裡只是排除掉 90 天內已經推播過的項目,
   // 不管 Gemini 這次判斷結果如何,都要先送進 Gemini —— 真正決定要不要標記為已推播,
@@ -160,6 +182,16 @@ async function main() {
     }
   } catch (err) {
     reportCritical(`LINE 推播失敗,本次不標記已推播,下次執行會重新嘗試這批項目: ${err.message}`);
+  }
+
+  // 每次執行都檢查一次,月初第一個工作日起就會把上個月的紀錄清掉,之後幾天查不到東西、幾乎不耗時。
+  // 放在最後執行:去重查詢已經用完這次需要的紀錄,不會影響本次判斷。
+  const purgeBefore = purgeCutoffIso(todayIso);
+  try {
+    const purged = await purgePushRecordsBefore(purgeBefore);
+    if (purged > 0) console.log(`已刪除 ${purged} 筆 ${purgeBefore} 以前的 Notion 推播紀錄`);
+  } catch (err) {
+    reportCritical(`Notion 舊紀錄刪除失敗(不影響本次推播,下次執行會再試): ${err.message}`);
   }
 
   if (criticalFailures.length > 0) {

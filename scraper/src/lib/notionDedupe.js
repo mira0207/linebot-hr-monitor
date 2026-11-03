@@ -1,8 +1,9 @@
 // 去重紀錄存在 Notion database,取代原型階段的本地 JSON 檔(容器重啟會消失)。
 // 判斷基準:只有「已推播」(Gemini 判定相關 / 精選入列)的項目才會寫入紀錄,
 // 未入選的項目不標記,下次執行仍會被重新抓取、重新送進 Gemini 判斷。
-// 保留期限:90 天,超過的紀錄視為過期(不影響去重判斷),需要另外呼叫
-// purgeExpiredPushRecords() 做實際清理,不會在一般執行流程中自動觸發。
+// 保留期限:只留本月的紀錄,上個月(含更早)的由 index.js 每次執行結尾呼叫
+// purgePushRecordsBefore() 自動刪除(見該處說明)。查詢時的 90 天條件是舊設計留下的保險,
+// 實際上紀錄活不到 90 天。
 const NOTION_VERSION = "2022-06-28";
 const RETENTION_DAYS = 90;
 const QUERY_BATCH_SIZE = 20;
@@ -123,29 +124,37 @@ export async function markPushedNotion(items) {
   }
 }
 
-// 維護用:清掉超過保留期限的紀錄(archive)。不在一般執行流程自動呼叫,
-// 建議另外排一個低頻率的排程(例如每週一次)執行。
-export async function purgeExpiredPushRecords() {
+// 清理舊紀錄:把 Pushed At 早於 beforeIso 的紀錄刪除(archive,移到 Notion 垃圾桶,
+// 垃圾桶 30 天後由 Notion 自動永久刪除)。
+// WORK DJ 的紀錄不刪:這個來源沒有發布日期、不經過當日/前日過濾,同幾篇文章會一直掛在列表頁,
+// 唯一擋住重複推播的就是這裡的紀錄,刪掉的話下個月會被當成新文章再推一次。
+export async function purgePushRecordsBefore(beforeIso) {
   let archived = 0;
-  let cursor;
 
-  do {
+  // 不用 start_cursor 翻頁:每刪掉一批,剩下的查詢結果就會往前移,用 cursor 會跳過資料。
+  // 改成每次都重新查第一頁,直到查不到為止。
+  for (;;) {
     const res = await fetch(`https://api.notion.com/v1/databases/${databaseId()}/query`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
-        filter: { property: "Pushed At", date: { before: cutoffDateIso() } },
+        filter: {
+          and: [
+            { property: "Pushed At", date: { before: beforeIso } },
+            { property: "Link", title: { does_not_contain: "workdj.tw" } },
+          ],
+        },
         page_size: 100,
-        ...(cursor ? { start_cursor: cursor } : {}),
       }),
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Notion 查詢過期紀錄失敗: HTTP ${res.status} - ${errText.slice(0, 300)}`);
+      throw new Error(`Notion 查詢舊紀錄失敗: HTTP ${res.status} - ${errText.slice(0, 300)}`);
     }
 
     const data = await res.json();
+    if (data.results.length === 0) break;
 
     for (const page of data.results) {
       const archiveRes = await fetch(`https://api.notion.com/v1/pages/${page.id}`, {
@@ -153,11 +162,14 @@ export async function purgeExpiredPushRecords() {
         headers: headers(),
         body: JSON.stringify({ archived: true }),
       });
-      if (archiveRes.ok) archived++;
+      // 刪除失敗要直接中斷,否則同一筆會一直出現在第一頁,變成無窮迴圈
+      if (!archiveRes.ok) {
+        const errText = await archiveRes.text();
+        throw new Error(`Notion 刪除紀錄失敗(已刪 ${archived} 筆): HTTP ${archiveRes.status} - ${errText.slice(0, 200)}`);
+      }
+      archived++;
     }
-
-    cursor = data.has_more ? data.next_cursor : undefined;
-  } while (cursor);
+  }
 
   return archived;
 }

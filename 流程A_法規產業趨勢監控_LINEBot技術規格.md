@@ -115,7 +115,8 @@ Gemini:相關性判斷                Gemini:精選 ≤16 篇、分 3 類
 實作於 [scraper/src/index.js](scraper/src/index.js):
 
 1. **同次執行內去重,用標題當 key**:七個來源抓回來的項目先用 `title` 去重(不是用 `link`)。原因是行政院公報跟勞動法令查詢系統常登出同一則公告,標題完全相同但連結不同,只用連結去重抓不到這種跨來源重複
-2. **當日/前日過濾**([scraper/src/lib/dateFilter.js](scraper/src/lib/dateFilter.js)):`filterRecent(items, days = 2)` 只保留 `published_at` 落在今天或昨天的項目,沒有日期的項目排除,除非該項目標記 `dateUnknown: true`(目前只有 WORK DJ)
+2. **當日/前日過濾**([scraper/src/lib/dateFilter.js](scraper/src/lib/dateFilter.js)):`filterRecent(items, days)` 只保留 `published_at` 落在時間窗內的項目,沒有日期的項目排除,除非該項目標記 `dateUnknown: true`(目前只有 WORK DJ)。時間窗由 `lookbackDays()` 決定:週二~週五是今天+昨天(2 天);**週一往回看 4 天(上週五~週一)**,補上週末沒推的內容
+   - **週六、週日不推播**:程式一開始用台灣時間判斷星期,週末直接結束(不爬取、不呼叫 Gemini、不推播,也不寫心跳紀錄)。週末幾乎沒有新資訊,過去週日、週一常常推空訊息,改成週五之後的內容留到週一一起推
 3. **分頁邏輯**([scraper/src/lib/paginate.js](scraper/src/lib/paginate.js)):`fetchAllPages(fetchPage, pages)` 依序抓多頁,某頁回傳空陣列就提前停止
 
 **設計原則(所有 HTTP 爬取來源共用):**
@@ -192,9 +193,14 @@ Gemini:相關性判斷                Gemini:精選 ≤16 篇、分 3 類
 
 Database 需要分享給 integration(右上角 `...` → Connections)才能被 API 存取。
 
-### 4.3 保留期限:90 天
+### 4.3 保留期限:只留本月
 
-查詢時只比對 `Pushed At` 在 90 天內的紀錄,超過的舊紀錄不影響去重判斷(但實務上因為有「當日/前日過濾」,90 天前的資料本來就不會再被抓到)。真正的清理由 `purgeExpiredPushRecords()` 負責,**不會**在一般執行流程中自動觸發,需要另外排一個低頻率排程執行(尚未設定)。
+每次執行結尾呼叫 `purgePushRecordsBefore()`,把上個月(含更早)的紀錄刪除(archive,移到 Notion 垃圾桶,30 天後 Notion 自動永久刪除)。每天都會檢查,所以月初第一個工作日起就會清掉,不需要另外排程。
+
+- **刪除界線最多推到「今天往前 3 天」**:週一會回看到上週五,如果月初剛好是週一,上週五~週日的紀錄還要拿來去重,所以上個月最後幾天的紀錄會在新月份頭幾天陸續刪除,不是 1 號一次清空
+- **WORK DJ 的紀錄不刪**:這個來源沒有發布日期、不經過時間窗過濾,同幾篇文章會一直掛在列表頁,唯一擋住重複推播的就是 Notion 紀錄
+- 放在流程最後執行,去重查詢已經用完本次需要的紀錄;刪除失敗會讓 run 變紅,下次執行再試
+- 查詢時比對 `Pushed At` 在 90 天內的條件是舊設計留下的,紀錄實際上活不到 90 天,不影響結果
 
 ### 4.4 錯誤處理
 
@@ -245,7 +251,7 @@ Database 需要分享給 integration(右上角 `...` → Connections)才能被 A
 
 Repo:`https://github.com/mira0207/linebot-hr-monitor`,workflow 檔案:[.github/workflows/daily.yml](.github/workflows/daily.yml)
 
-**GitHub 原生的 `schedule` 事件實測不可靠,已經移除,改用 [cron-job.org](https://cron-job.org) 每天 09:10 台灣時間呼叫 GitHub 的 `workflow_dispatch` REST API 來觸發。**
+**GitHub 原生的 `schedule` 事件實測不可靠,已經移除,改用 [cron-job.org](https://cron-job.org) 每天 09:10 台灣時間呼叫 GitHub 的 `workflow_dispatch` REST API 來觸發。**週六、週日照常觸發,但程式會判斷是週末直接結束(見 2.3 節)。
 
 踩過的坑(依序):
 1. 一開始用 `cron: "0 1 * * *"`(整點觸發),2026-07-11 09:00 完全沒有觸發紀錄
@@ -287,14 +293,14 @@ Repo:`https://github.com/mira0207/linebot-hr-monitor`,workflow 檔案:[.github/w
 
 - [x] 爬蟲七個來源全部驗證可正常抓到當日/近期真實資料
 - [x] Gemini 判斷/精選品質已人工檢視,兩軌輸出都合理
-- [x] Notion 去重機制實測跑通(查詢、寫入、90 天保留邏輯)
+- [x] Notion 去重機制實測跑通(查詢、寫入)
 - [x] LINE 推播實測至少成功一次(手動觸發)
 - [ ] 觀察至少 3-5 天的自動排程執行結果,確認：
   - 每天都有準時(或接近準時)執行 —— GitHub 原生排程已證實不可靠(見七、1 節的踩坑紀錄),已改用外部 cron-job.org 觸發,從改用當天起重新觀察,這項還不能打勾
   - 推播內容品質穩定,沒有明顯的誤判或重複
   - 沒有 API 額度或費用異常
 - [ ] 確認 GitHub Actions 執行失敗時,失敗通知信真的會寄到有人在看的信箱
-- [ ] `purgeExpiredPushRecords()` 排一個低頻率排程執行(見 4.3 節)
+- [ ] Notion 每月自動刪除上個月紀錄(見 4.3 節)實際跑過一次,確認刪除筆數正確、WORK DJ 紀錄有留下
 
 ---
 
